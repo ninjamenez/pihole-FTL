@@ -235,6 +235,10 @@ components:
                   type: string
                 queryLogging:
                   type: boolean
+                ignoreQueryRegex:
+                  type: array
+                  items:
+                    type: string
                 cnameRecords:
                   type: array
                   items:
@@ -707,6 +711,7 @@ components:
             hostRecord: ""
             listeningMode: "local"
             queryLogging: true
+            ignoreQueryRegex: [ '(^|\\.)telemetry\\.', '\\.intranet\\.local$' ]
             cnameRecords:
               - "*.example.com,default.example.com"
               - "hourly.yetanother.com,yetanother.com,3600"

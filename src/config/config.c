@@ -564,6 +564,13 @@ void initConfig(struct config *conf)
 	conf->dns.queryLogging.d.b = true;
 	conf->dns.queryLogging.c = validate_stub; // Only type-based checking
 
+	conf->dns.ignoreQueryRegex.k = "dns.ignoreQueryRegex";
+	conf->dns.ignoreQueryRegex.h = "Array of domains to be excluded from the \"Total queries\" counter (regex). Matching queries are still processed normally (blocking, forwarding, caching, replies), but they do not increment the Total Queries statistic.\n Note that backslashes \"\\\" need to be escaped, i.e. \"\\\\\" in this setting\n\n Example: [ \"(^|\\\\.)telemetry\\\\.\", \"\\\\.intranet\\\\.local$\" ]";
+	conf->dns.ignoreQueryRegex.a = cJSON_CreateStringReference("An array of regular expressions describing domains");
+	conf->dns.ignoreQueryRegex.t = CONF_JSON_STRING_ARRAY;
+	conf->dns.ignoreQueryRegex.d.json = cJSON_CreateArray();
+	conf->dns.ignoreQueryRegex.c = validate_regex_array;
+
 	conf->dns.cnameRecords.k = "dns.cnameRecords";
 	conf->dns.cnameRecords.h = "List of CNAME records which indicate that <cname> is really <target>. If the <TTL> is given, it overwrites the value of local-ttl";
 	conf->dns.cnameRecords.a = cJSON_CreateStringReference("Array of CNAMEs, each one in the following form: \"<cname>,<target>[,<TTL>]\"");

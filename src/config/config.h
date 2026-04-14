@@ -148,6 +148,7 @@ struct config {
 		struct conf_item hostRecord;
 		struct conf_item listeningMode;
 		struct conf_item queryLogging;
+		struct conf_item ignoreQueryRegex;
 		struct conf_item cnameRecords;
 		struct conf_item port;
 		struct conf_item localise;
