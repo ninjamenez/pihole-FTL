@@ -78,6 +78,66 @@ static int __attribute__((pure)) cmpdesc_te(const void *a, const void *b)
 		return 0;
 }
 
+// shmem needs to be locked while calling this function
+static unsigned int get_total_queries_for_stats(void)
+{
+	const unsigned int total_queries = counters->queries;
+	const int N = cJSON_GetArraySize(config.dns.ignoreQueryRegex.v.json);
+	if(N < 1 || total_queries == 0u)
+		return total_queries;
+
+	regex_t *regex = calloc(N, sizeof(regex_t));
+	if(regex == NULL)
+		return total_queries;
+
+	unsigned int N_regex = 0u;
+	cJSON *filter = NULL;
+	cJSON_ArrayForEach(filter, config.dns.ignoreQueryRegex.v.json)
+	{
+		if(!cJSON_IsString(filter) || filter->valuestring == NULL || strlen(filter->valuestring) == 0)
+			continue;
+
+		const int rc = regcomp(&regex[N_regex], filter->valuestring, REG_EXTENDED | REG_ICASE | REG_NOSUB);
+		if(rc != 0)
+			continue;
+
+		N_regex++;
+	}
+
+	if(N_regex == 0u)
+	{
+		free(regex);
+		return total_queries;
+	}
+
+	unsigned int ignored_queries = 0u;
+	for(unsigned int queryID = 0u; queryID < total_queries; queryID++)
+	{
+		const queriesData *query = getQuery(queryID, true);
+		if(query == NULL)
+			continue;
+
+		const char *domain = getDomainString(query);
+		if(domain == NULL)
+			continue;
+
+		for(unsigned int i = 0u; i < N_regex; i++)
+		{
+			if(regexec(&regex[i], domain, 0, NULL, 0) == 0)
+			{
+				ignored_queries++;
+				break;
+			}
+		}
+	}
+
+	for(unsigned int i = 0u; i < N_regex; i++)
+		regfree(&regex[i]);
+	free(regex);
+
+	return total_queries > ignored_queries ? total_queries - ignored_queries : 0u;
+}
+
 static int get_query_types_obj(struct ftl_conn *api, cJSON *types)
 {
 	for(unsigned int i = TYPE_A; i < TYPE_MAX; i++)
@@ -118,7 +178,7 @@ int api_stats_summary(struct ftl_conn *api)
 	const int blocked = get_blocked_count();
 	const int forwarded = get_forwarded_count();
 	const int cached = get_cached_count();
-	const int total = counters->queries;
+	const int total = get_total_queries_for_stats();
 	const int num_gravity = counters->database.gravity;
 	const int num_clients = counters->clients;
 	const int num_domains = counters->domains;
@@ -208,7 +268,7 @@ cJSON *get_top_domains(struct ftl_conn *api, const int count,
 	lock_shm();
 
 	const unsigned int domains = counters->domains;
-	const unsigned int total_queries = counters->queries;
+	const unsigned int total_queries = get_total_queries_for_stats();
 	const unsigned int blocked_count = get_blocked_count();
 	struct top_entries *top_domains = calloc(domains, sizeof(struct top_entries));
 	if(top_domains == NULL)
@@ -374,7 +434,7 @@ cJSON *get_top_clients(struct ftl_conn *api, const int count,
 	lock_shm();
 
 	const unsigned int clients = counters->clients;
-	const int total_queries = counters->queries;
+	const int total_queries = get_total_queries_for_stats();
 	const int blocked_count = get_blocked_count();
 	struct top_entries *top_clients = calloc(clients, sizeof(struct top_entries));
 	if(top_clients == NULL)
@@ -562,7 +622,7 @@ cJSON *get_top_upstreams(struct ftl_conn *api, const bool upstreams_only)
 {
 	const int upstreams = counters->upstreams;
 	const int forwarded_count = get_forwarded_count();
-	const int total_queries = counters->queries;
+	const int total_queries = get_total_queries_for_stats();
 	struct top_entries *top_upstreams = calloc(upstreams, sizeof(struct top_entries));
 	if(top_upstreams == NULL)
 	{

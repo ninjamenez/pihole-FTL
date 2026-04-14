@@ -20,12 +20,74 @@
 #include "metrics.h"
 // get_blockingstatus()
 #include "config/config.h"
+// regex_t
+#include "regex_r.h"
 // uname()
 #include <sys/utsname.h>
 // struct proc_mem, getProcessMemory()
 #include "procps.h"
 // getcpu_percentage()
 #include "daemon.h"
+
+// shmem needs to be locked while calling this function
+static unsigned int get_total_queries_for_stats(void)
+{
+	const unsigned int total_queries = counters->queries;
+	const int N = cJSON_GetArraySize(config.dns.ignoreQueryRegex.v.json);
+	if(N < 1 || total_queries == 0u)
+		return total_queries;
+
+	regex_t *regex = calloc(N, sizeof(regex_t));
+	if(regex == NULL)
+		return total_queries;
+
+	unsigned int N_regex = 0u;
+	cJSON *filter = NULL;
+	cJSON_ArrayForEach(filter, config.dns.ignoreQueryRegex.v.json)
+	{
+		if(!cJSON_IsString(filter) || filter->valuestring == NULL || strlen(filter->valuestring) == 0)
+			continue;
+
+		const int rc = regcomp(&regex[N_regex], filter->valuestring, REG_EXTENDED | REG_ICASE | REG_NOSUB);
+		if(rc != 0)
+			continue;
+
+		N_regex++;
+	}
+
+	if(N_regex == 0u)
+	{
+		free(regex);
+		return total_queries;
+	}
+
+	unsigned int ignored_queries = 0u;
+	for(unsigned int queryID = 0u; queryID < total_queries; queryID++)
+	{
+		const queriesData *query = getQuery(queryID, true);
+		if(query == NULL)
+			continue;
+
+		const char *domain = getDomainString(query);
+		if(domain == NULL)
+			continue;
+
+		for(unsigned int i = 0u; i < N_regex; i++)
+		{
+			if(regexec(&regex[i], domain, 0, NULL, 0) == 0)
+			{
+				ignored_queries++;
+				break;
+			}
+		}
+	}
+
+	for(unsigned int i = 0u; i < N_regex; i++)
+		regfree(&regex[i]);
+	free(regex);
+
+	return total_queries > ignored_queries ? total_queries - ignored_queries : 0u;
+}
 
 int api_padd(struct ftl_conn *api)
 {
@@ -38,7 +100,7 @@ int api_padd(struct ftl_conn *api)
 	// Lock shared memory
 	lock_shm();
 
-	const int total = counters->queries;
+	const int total = get_total_queries_for_stats();
 	const int blocked = get_blocked_count();
 	const unsigned int active_clients = get_active_clients();
 	const int num_gravity = counters->database.gravity;
